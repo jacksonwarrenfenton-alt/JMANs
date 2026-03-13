@@ -1,6 +1,0 @@
-streamlit>=1.40
-pandas>=2.2
-numpy>=1.26
-yfinance>=0.2.54
-lxml>=5.3
-html5lib>=1.1
