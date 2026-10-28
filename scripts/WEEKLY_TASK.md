@@ -9,9 +9,11 @@ plus `恒河猴` / `猕猴` variants. Prefer results on ccgp.gov.cn; tender aggr
 (e.g. yzb.caigou2003.com) are acceptable; news/research articles are NOT a source of ledger rows.
 Skip any URL already in `data/inputs/nifdc_tenders.csv` or `data/inputs/press_candidates.csv`.
 
+Also search for other public buyers (中科院 药物研究所, 大学, 医院, 实验动物中心 + 食蟹猴/实验猴 采购 中标). Record the buyer in the `buyer` column; non-NIFDC rows feed only the all-buyer composite.
+
 ## 2. Extract (WebFetch the notice page itself)
 Needed: notice_id (project/tender number), lot_id, award_date, species (cynomolgus|rhesus),
-origin (china|cambodia|unknown), quantity, unit_price_cny, source_url.
+buyer, origin (china|cambodia|unknown), quantity, unit_price_cny, source_url.
 Rules:
 - Only append a row when quantity AND per-animal unit price are visible on the notice.
 - If a total is shown, check unit_price x quantity ~= total (within 1%). If not, do not add to the ledger;

@@ -19,8 +19,12 @@ Exit status line: `OK`, `STALE (inputs)`, or `FAILED (reason)`. Paths are repo-r
 ## Inputs
 | Input | How it gets in | Why |
 |---|---|---|
-| NIFDC awards | `data/inputs/nifdc_tenders.csv` (columns: `notice_id,lot_id,award_date,species,origin,quantity,unit_price_cny,source_url`), one row per lot copied from the official ccgp.gov.cn notice | The notice text isn't reliably machine-readable and ccgp.gov.cn rate-limits automated access. Every row must carry its source URL. |
+| NIFDC awards | `data/inputs/nifdc_tenders.csv` (columns: `notice_id,lot_id,award_date,species,origin,quantity,unit_price_cny,source_url`, optional `buyer`; blank = NIFDC), one row per lot copied from the official ccgp.gov.cn notice | The notice text isn't reliably machine-readable and ccgp.gov.cn rate-limits automated access. Every row must carry its source URL. |
 | New-notice detection | script queries ccgp.gov.cn search for NIFDC primate award notices missing from the ledger and flags them (`UNLEDGERED_NOTICES`) | Freshness check. Parser is best-effort and unverified against a live response. If it is blocked the run FAILS (strict reading of the error rule). Set `discovery.enabled=false` in `config.json` to run on the ledger alone; this is recorded in `notes`. |
 | CITES | CSV export(s) from trade.cites.org into `data/inputs/cites/` (Term=live, taxon Macaca fascicularis) | No open API. Data is annual and lags 1-2 years; the lag is recorded each run. |
 | CRO / analyst | `data/inputs/cro_crosscheck.csv` (free-form columns) | Validation only; never in the index. |
 | NMPA trial counts | `data/inputs/nmpa_trials.csv` (`period,count`) | Context only; nmpa.gov.cn blocks scripted access. |
+
+## Series
+- **Headline index:** NIFDC awards only (buyer blank or containing NIFDC / 检定).
+- **all_buyers_cynomolgus** (`secondary_series.csv`): median over every public buyer (CAS institutes, universities, hospitals). Updates more often; mixes buyers and specs, so it is never blended into the headline.

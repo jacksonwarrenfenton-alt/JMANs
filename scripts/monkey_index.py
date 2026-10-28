@@ -84,7 +84,9 @@ def load_ledger(flags):
                 "quantity": int(r["quantity"]),
                 "price": float(r["unit_price_cny"]),
                 "url": r["source_url"].strip(),
+                "buyer": (r.get("buyer") or "NIFDC").strip(),
             }
+            lot["nifdc"] = "nifdc" in lot["buyer"].lower() or "检定" in lot["buyer"]
         except (ValueError, KeyError, AttributeError) as e:
             raise SourceError(f"ledger line {i}: unparseable value ({e})")
         if lot["price"] <= 0 or lot["quantity"] <= 0 or lot["species"] not in SPECIES or not lot["url"]:
@@ -246,9 +248,9 @@ def run():
     if not new_lots:
         stale.append(f"nifdc(last_updated={state.get('nifdc_last_updated', 'never')})")
 
-    prim = window(lots, CFG["primary_species"])
+    prim = window([l for l in lots if l["nifdc"]], CFG["primary_species"])
     if not prim:
-        raise SourceError(f"no {CFG['primary_species']} awards in trailing {CFG['window_days']}d window; "
+        raise SourceError(f"no NIFDC {CFG['primary_species']} awards in trailing {CFG['window_days']}d window; "
                           "not carrying forward (METHOD)")
     median_cny = med(prim)
 
@@ -273,7 +275,7 @@ def run():
         flags.append(f"OUTLIER_MEDIAN median {d:+.1f}% vs prior run (review)")
 
     # secondary series
-    sec = {"rhesus": window(lots, "rhesus"), "cambodia_origin": window(lots, None, "cambodia")}
+    sec = {"all_buyers_cynomolgus": window(lots, "cynomolgus"), "rhesus": window(lots, "rhesus"), "cambodia_origin": window(lots, None, "cambodia")}
 
     # validation / supply / context inputs (never primary)
     cites = load_cites(notes)
