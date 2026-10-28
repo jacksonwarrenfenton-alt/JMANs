@@ -12,7 +12,7 @@ Layout (relative to repo root, override with MPI_ROOT):
   data/state.json                 per-source freshness markers, base value
   reports/YYYY-MM-DD.md, reports/charts/
 """
-import csv, datetime as dt, json, os, re, shutil, statistics, sys, traceback
+import csv, datetime as dt, io, json, os, re, shutil, statistics, subprocess, sys, tempfile, time, traceback, zipfile
 from pathlib import Path
 
 import requests
@@ -137,6 +137,102 @@ def fetch_fx(flags, notes):
     return float(rate), rdate
 
 
+def fetch_equities(errors):
+    """Context only: CRO share prices (Yahoo chart API, public). Failures never block the index."""
+    out = {}
+    for i, (tk, name) in enumerate(CFG["equities"].items()):
+        if i:
+            time.sleep(3)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{tk}?range=6mo&interval=1d"
+        try:
+            for wait in (20, 40, None):
+                r = requests.get(url, headers={"User-Agent": "monkey-price-index research"}, timeout=30)
+                if r.status_code == 429 and wait:
+                    time.sleep(wait)  # honest backoff on rate limit; give up after two retries
+                    continue
+                break
+            if r.status_code != 200:
+                raise SourceError(f"HTTP {r.status_code}")
+            save_raw(f"equity_{tk}.json", r.content, url)
+            res = r.json()["chart"]["result"][0]
+            pts = [(dt.date.fromtimestamp(t), c) for t, c in zip(res["timestamp"], res["indicators"]["quote"][0]["close"]) if c]
+            if not pts:
+                raise SourceError("no closes")
+            out[tk] = {"name": name, "pts": pts, "ccy": res["meta"].get("currency", "")}
+        except Exception as e:
+            errors.append(f"equity {tk}: {type(e).__name__}: {e}")
+    return out
+
+
+def eq_change(pts, weeks):
+    tgt = pts[-1][0] - dt.timedelta(weeks=weeks)
+    base = [c for d, c in pts if d <= tgt]
+    return pct(pts[-1][1], base[-1]) if base else None
+
+
+def cites_remote_version():
+    r = requests.head(CFG["cites_download_url"], headers=UA, timeout=30, allow_redirects=True)
+    m = re.search(r'filename="?([^";]+)', r.headers.get("content-disposition", ""))
+    if r.status_code != 200 or not m:
+        raise SourceError(f"CITES version check failed (HTTP {r.status_code})")
+    return m.group(1)
+
+
+def update_cites(state, notes):
+    """Refresh data/inputs/cites/macaca_live_annual.csv when the CITES full-database version changes.
+    Streams the ~0.5GB zip, keeps only Macaca fascicularis live-animal rows, sums by year/exporter/reporter."""
+    ver = cites_remote_version()
+    if ver == state.get("cites_version") and (D / "inputs" / "cites" / "macaca_live_annual.csv").exists():
+        notes.append(f"CITES db {ver} unchanged since {state.get('cites_checked_new', 'earlier')}")
+        return None
+    zpath = os.environ.get("MPI_CITES_ZIP")
+    tmp = None
+    if not zpath:
+        tmp = tempfile.mkdtemp()
+        zpath = os.path.join(tmp, "cites.zip")
+        subprocess.run(["curl", "-sS", "-f", "-L", "-m", "1500", "-o", zpath, CFG["cites_download_url"]], check=True)
+    agg = {}
+    try:
+        with zipfile.ZipFile(zpath) as zf:
+            names = sorted(n for n in zf.namelist() if n.endswith(".csv"))
+            if not names:
+                raise SourceError("CITES zip has no CSV members")
+            hdr = None
+            for n in names:
+                with zf.open(n) as raw:
+                    for line in io.TextIOWrapper(raw, encoding="utf-8", newline=""):
+                        if hdr is None:
+                            hdr = next(csv.reader([line]))
+                            ix = {k: hdr.index(k) for k in ("Year", "Taxon", "Term", "Quantity", "Unit", "Exporter", "Reporter.type")}
+                            continue
+                        if "Macaca fascicularis" not in line:
+                            continue
+                        f = next(csv.reader([line]))
+                        if f[ix["Taxon"]] != "Macaca fascicularis" or f[ix["Term"]].lower() != "live" or f[ix["Unit"]] not in ("",):
+                            continue
+                        try:
+                            q = float(f[ix["Quantity"]])
+                        except ValueError:
+                            continue
+                        k = (int(f[ix["Year"]]), f[ix["Exporter"]], f[ix["Reporter.type"]])
+                        agg[k] = agg.get(k, 0.0) + q
+    finally:
+        if tmp:
+            shutil.rmtree(tmp, ignore_errors=True)
+    if not agg:
+        raise SourceError("CITES parse produced no Macaca fascicularis live rows (format change?)")
+    out = D / "inputs" / "cites" / "macaca_live_annual.csv"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    keys = sorted({(y, e) for y, e, _ in agg})
+    with open(out, "w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["Year", "Taxon", "Term", "Exporter", "Exporter reported quantity", "Importer reported quantity"])
+        for y, e in keys:
+            w.writerow([y, "Macaca fascicularis", "live", e, agg.get((y, e, "E"), ""), agg.get((y, e, "I"), "")])
+    notes.append(f"CITES db {ver} parsed: {len(keys)} exporter-years, data through {max(y for y, _ in keys)}")
+    return ver
+
+
 def load_cites(notes):
     """Annual live-macaque exports by exporter from manual CITES Trade Database CSV exports."""
     files = sorted((D / "inputs" / "cites").glob("*.csv"))
@@ -150,6 +246,8 @@ def load_cites(notes):
             if "macaca" not in r.get("taxon", "").lower() or r.get("term", "live").lower() != "live":
                 continue
             q = r.get("exporter reported quantity") or r.get("importer reported quantity") or ""
+            if not q:
+                continue
             try:
                 agg[(r["exporter"], int(r["year"]))] = agg.get((r["exporter"], int(r["year"])), 0) + float(q)
             except (ValueError, KeyError):
@@ -223,7 +321,8 @@ def write_report(lines):
 
 
 def run():
-    flags, notes, stale, sources = [], [], [], []
+    flags, notes, stale, sources, errors = [], [], [], [], []
+    new_cites_version = None
     state = load_state()
     D.mkdir(parents=True, exist_ok=True)
     prior = last_index_row()
@@ -278,6 +377,10 @@ def run():
     sec = {"all_buyers_cynomolgus": window(lots, "cynomolgus"), "rhesus": window(lots, "rhesus"), "cambodia_origin": window(lots, None, "cambodia")}
 
     # validation / supply / context inputs (never primary)
+    try:
+        new_cites_version = update_cites(state, notes)
+    except Exception as e:
+        errors.append(f"cites refresh: {type(e).__name__}: {e}")
     cites = load_cites(notes)
     cites_info = None
     if cites is None:
@@ -314,6 +417,13 @@ def run():
     else:
         stale.append("nmpa_context(none provided)")
 
+    eq = fetch_equities(errors)
+    for tk in CFG["equities"]:
+        if tk not in eq:
+            stale.append(f"equity_{tk}(fetch failed)")
+        else:
+            sources.append(f"yahoo_{tk}")
+
     # ---- all validation passed: commit outputs ----
     rows_before = read_csv(INDEX_CSV) if INDEX_CSV.exists() else []
     row = {"date": TODAY.isoformat(), "index_value": f"{idx:.2f}", "price_cny_median": f"{median_cny:.0f}",
@@ -325,12 +435,18 @@ def run():
         append_row(SECONDARY_CSV, ["date", "series", "n_lots", "median_cny"],
                    {"date": TODAY.isoformat(), "series": name, "n_lots": len(ls),
                     "median_cny": f"{med(ls):.0f}" if ls else ""})
+    for tk, e in eq.items():
+        append_row(D / "context_equities.csv", ["date", "ticker", "last_close_date", "close", "currency"],
+                   {"date": TODAY.isoformat(), "ticker": tk, "last_close_date": e["pts"][-1][0].isoformat(),
+                    "close": f"{e['pts'][-1][1]:.2f}", "currency": e["ccy"]})
     state.update({"base": base, "seen_lots": sorted(l["key"] for l in lots),
                   "last_run": TODAY.isoformat()})
     if new_lots:
         state["nifdc_last_updated"] = TODAY.isoformat()
     if cites_info and state.get("cites_latest_year") != cites_info[0]:
         state["cites_latest_year"], state["cites_last_updated"] = cites_info[0], TODAY.isoformat()
+    if new_cites_version:
+        state["cites_version"], state["cites_checked_new"] = new_cites_version, TODAY.isoformat()
     if nmpa:
         state["nmpa_latest"] = nmpa[-1]["period"]
     STATE_JSON.write_text(json.dumps(state, indent=2, default=list))
@@ -351,10 +467,10 @@ def run():
         L.append(f"- {name}: {fmt(med(ls), 0)} (n={len(ls)})")
     L += ["", "## Supply (CITES live Macaca exports, annual, exporter-reported)"]
     if cites:
-        for ex in CFG["cites_exporters"]:
+        for ex, name in CFG["cites_exporters"].items():
             yrs = sorted(y for e, y in cites if e == ex)[-3:]
             if yrs:
-                L.append(f"- {ex}: " + ", ".join(f"{y}: {cites[(ex, y)]:,.0f}" for y in yrs))
+                L.append(f"- {name}: " + ", ".join(f"{y}: {cites[(ex, y)]:,.0f}" for y in yrs))
         L.append(f"- Lag: latest year {cites_info[0]} ({cites_info[1]}y behind)")
     else:
         L.append("- STALE: no CITES export file provided")
@@ -362,12 +478,19 @@ def run():
     L += [f"- {r}" for r in cro] if cro else ["- none provided"]
     L += ["", "## Unverified press / aggregator figures (never in index)"]
     L += [f"- {r}" for r in press] if press else ["- none"]
+    L += ["", "## Context: CRO share prices (not in index)"]
+    for tk, e in eq.items():
+        pts = e["pts"]
+        L.append(f"- {e['name']} {tk}: {pts[-1][1]:.2f} {e['ccy']} (close {pts[-1][0]}); "
+                 f"4w {fmt(eq_change(pts, 4), 1, '%')}, 12w {fmt(eq_change(pts, 12), 1, '%')}")
+    if not eq:
+        L.append("- unavailable this run")
     L += ["", "## Context: NMPA clinical trials"]
     L += [f"- {nmpa[-1]}"] if nmpa else ["- none provided"]
     L += ["", "## Stale inputs"] + ([f"- {s}" for s in stale] or ["- none"])
     L += ["", "## Flags"] + ([f"- {s}" for s in flags] or ["- none"])
     L += ["", "## Notes"] + ([f"- {s}" for s in notes] or ["- none"])
-    L += ["", "## Errors", "- none"]
+    L += ["", "## Errors"] + ([f"- {e}" for e in errors] or ["- none"])
     if chart:
         L += ["", f"Chart: {chart.relative_to(ROOT)}"]
     write_report(L)

@@ -18,12 +18,17 @@
     "url": "https://search.ccgp.gov.cn/bxsearch?searchtype=1&kw=%E9%A3%9F%E8%9F%B9%E7%8C%B4&page_index=1&bidSort=0&buyerName=%E4%B8%AD%E5%9B%BD%E9%A3%9F%E5%93%81%E8%8D%AF%E5%93%81%E6%A3%80%E5%AE%9A%E7%A0%94%E7%A9%B6%E9%99%A2&projectId=&pinMu=0&bidType=0&dbselect=bidx&timeType=5",
     "_comment": "ccgp.gov.cn blocks scripted access; discovery is done by the scheduled agent (see WEEKLY_TASK.md). Do not circumvent the block."
   },
-  "cites_exporters": [
-    "Cambodia",
-    "China",
-    "Viet Nam",
-    "Mauritius",
-    "Indonesia",
-    "Lao People's Democratic Republic"
-  ]
+  "cites_exporters": {
+    "KH": "Cambodia",
+    "CN": "China",
+    "VN": "Viet Nam",
+    "MU": "Mauritius",
+    "ID": "Indonesia",
+    "LA": "Lao PDR"
+  },
+  "equities": {
+    "603127.SS": "Zhaoyan New Drug (A-share)",
+    "6127.HK": "JOINN Laboratories (HK)"
+  },
+  "cites_download_url": "https://trade.cites.org/cites_trade/download_db"
 }

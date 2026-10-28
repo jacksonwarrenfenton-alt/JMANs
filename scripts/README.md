@@ -21,9 +21,10 @@ Exit status line: `OK`, `STALE (inputs)`, or `FAILED (reason)`. Paths are repo-r
 |---|---|---|
 | NIFDC awards | `data/inputs/nifdc_tenders.csv` (columns: `notice_id,lot_id,award_date,species,origin,quantity,unit_price_cny,source_url`, optional `buyer`; blank = NIFDC), one row per lot copied from the official ccgp.gov.cn notice | The notice text isn't reliably machine-readable and ccgp.gov.cn rate-limits automated access. Every row must carry its source URL. |
 | New-notice detection | script queries ccgp.gov.cn search for NIFDC primate award notices missing from the ledger and flags them (`UNLEDGERED_NOTICES`) | Freshness check. Parser is best-effort and unverified against a live response. If it is blocked the run FAILS (strict reading of the error rule). Set `discovery.enabled=false` in `config.json` to run on the ledger alone; this is recorded in `notes`. |
-| CITES | CSV export(s) from trade.cites.org into `data/inputs/cites/` (Term=live, taxon Macaca fascicularis) | No open API. Data is annual and lags 1-2 years; the lag is recorded each run. |
-| CRO / analyst | `data/inputs/cro_crosscheck.csv` (free-form columns) | Validation only; never in the index. |
-| NMPA trial counts | `data/inputs/nmpa_trials.csv` (`period,count`) | Context only; nmpa.gov.cn blocks scripted access. |
+| CITES | **Automatic.** Each run HEADs the CITES full-database download (trade.cites.org/cites_trade/download_db); when the version changes it streams the ~0.5 GB zip and rewrites `data/inputs/cites/macaca_live_annual.csv` (live *Macaca fascicularis*, exporter- and importer-reported, by year and exporter). Data is annual with a 1-2 year lag; the lag is recorded each run. | Free, no login, reuse permitted with credit. It is a supply indicator, not a price. A refresh failure is logged and marks CITES STALE. |
+| CRO share prices | **Automatic.** Yahoo chart API (public), 昭衍新药 603127.SS and JOINN 6127.HK, weekly last close and 4w/12w change, appended to `data/context_equities.csv`. 429s get two slow retries; a failed ticker marks itself STALE and is logged. | Weekly sentiment context only; never in the index. |
+| CRO / analyst prices | `data/inputs/cro_crosscheck.csv` (free-form) | Validation only. No free machine-readable source; stays STALE until filled. |
+| NMPA trial counts | `data/inputs/nmpa_trials.csv` (`period,count`) | Context only. chinadrugtrials.org.cn is not readable by the fetch tools and nmpa.gov.cn blocks scripts; stays STALE until filled. |
 
 ## Series
 - **Headline index:** NIFDC awards only (buyer blank or containing NIFDC / 检定).
