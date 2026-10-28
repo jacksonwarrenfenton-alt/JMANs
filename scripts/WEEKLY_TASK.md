@@ -42,3 +42,21 @@ secondhand, may be paywalled or copyrighted, and repeat the same few notices.
 to the working branch. Report the one-line status.
 If a fetch is blocked (403/429/頻繁訪問), log it in the report and move on; do not retry with altered headers
 or other circumvention.
+
+## 5. Refresh the dashboard (after the script succeeds and you have pushed)
+Dashboard: https://claude.ai/artifact/2DU59sJNJciP2apLaRYSh5 (artifact type Dashboard; datasets are attached CSV files).
+For each pair below, (a) upload the repo file with the Artifact tool (`url` = the dashboard, `asset: true`, `file_path` = the file;
+one CSV per call), (b) `ArtifactData` `get` collection `datasets` doc `<id>` to read its `version`, then (c) `update` that doc
+with `source.url` = the new `/_blob/...` url exactly as returned (keep `kind`, `name`, `format`) and `updated` =
+`{at: <now ISO>, by: "Claude"}`, passing `if_version`. Delete the replaced asset afterwards (Artifact `delete`, `path` = old id) only if the update succeeded.
+
+| dataset id | repo file |
+|---|---|
+| index | data/monkey_price_index.csv |
+| secondary | data/secondary_series.csv |
+| ledger | data/inputs/nifdc_tenders.csv |
+| press | data/inputs/press_candidates.csv |
+
+Current asset ids (replace as you refresh): index b9128ef5a820a585e6c2cb07d0a5e397, secondary 7415fb44495f9eb40df5f3a177fb856d,
+ledger dbb29d26541e110ef81b678a62b9484f, press c123abb521243aa4357fe9a6cdf1ef09.
+If the Artifact or ArtifactData tools are unavailable in the run, say so in the status and continue; the repo data is the source of truth.
