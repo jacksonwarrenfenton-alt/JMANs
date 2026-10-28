@@ -321,7 +321,7 @@ def write_report(lines):
 
 
 def run():
-    flags, notes, stale, sources, errors = [], [], [], [], []
+    flags, notes, stale, sources, errors, fresh = [], [], [], [], [], []
     new_cites_version = None
     state = load_state()
     D.mkdir(parents=True, exist_ok=True)
@@ -344,8 +344,16 @@ def run():
     # freshness of primary input
     seen_before = {tuple(k) for k in state.get("seen_lots", [])}
     new_lots = [l for l in lots if l["key"] not in seen_before]
-    if not new_lots:
-        stale.append(f"nifdc(last_updated={state.get('nifdc_last_updated', 'never')})")
+    last_new = state.get("nifdc_last_updated")
+    if new_lots:
+        fresh.append(f"nifdc: {len(new_lots)} new award lot(s) this run")
+    else:
+        age = (TODAY - dt.date.fromisoformat(last_new)).days if last_new else 0
+        mx = CFG["freshness"]["nifdc_max_age_days"]
+        if age > mx:
+            stale.append(f"nifdc(last_updated={last_new}; {age}d > {mx}d cadence)")
+        else:
+            fresh.append(f"nifdc: no new awards; last update {last_new or 'n/a'} ({age}d, within {mx}d cadence)")
 
     prim = window([l for l in lots if l["nifdc"]], CFG["primary_species"])
     if not prim:
@@ -383,14 +391,15 @@ def run():
         errors.append(f"cites refresh: {type(e).__name__}: {e}")
     cites = load_cites(notes)
     cites_info = None
-    if cites is None:
-        stale.append(f"cites(last_updated={state.get('cites_last_updated', 'never')}; no export file in data/inputs/cites)")
-    else:
+    cites_failed = any(e.startswith("cites refresh") for e in errors)
+    if cites is None or cites_failed:
+        stale.append(f"cites(last_updated={state.get('cites_last_updated', 'never')}; "
+                     f"{'refresh failed' if cites_failed else 'no export file'})")
+    if cites is not None:
         latest_year = max(y for _, y in cites)
-        if state.get("cites_latest_year") == latest_year:
-            stale.append(f"cites(latest_year={latest_year}; last_updated={state.get('cites_last_updated', 'never')})")
-        else:
-            sources.append("cites_trade_db")
+        sources.append("cites_trade_db")
+        if not cites_failed:
+            fresh.append(f"cites: database checked this run, data through {latest_year} (annual, {TODAY.year - latest_year}y lag)")
         cites_info = (latest_year, TODAY.year - latest_year)
         notes.append(f"CITES lag: latest data year {latest_year}, {TODAY.year - latest_year}y behind run year")
     press = None
@@ -405,17 +414,25 @@ def run():
         cro = read_csv(p)
         sources.append("cro_crosscheck")
     else:
-        stale.append("cro_crosscheck(none provided)")
+        fresh.append("cro_crosscheck: not configured (optional validation input)")
     nmpa = None
     p = D / "inputs" / "nmpa_trials.csv"
     if p.exists():
         save_raw("nmpa_trials.csv", p.read_bytes(), f"local {p.relative_to(ROOT)}")
         nmpa = read_csv(p)
         key = nmpa[-1]["period"] if nmpa else None
-        if key and state.get("nmpa_latest") == key:
-            stale.append(f"nmpa_context(latest={key})")
+        if key and state.get("nmpa_latest") != key:
+            nmpa_updated = TODAY.isoformat()
+        else:
+            nmpa_updated = state.get("nmpa_last_updated")
+        age = (TODAY - dt.date.fromisoformat(nmpa_updated)).days if nmpa_updated else 0
+        mx = CFG["freshness"]["nmpa_max_age_days"]
+        if age > mx:
+            stale.append(f"nmpa_context(latest={key}; {age}d > {mx}d cadence)")
+        else:
+            fresh.append(f"nmpa_context: latest period {key}, updated {nmpa_updated}")
     else:
-        stale.append("nmpa_context(none provided)")
+        fresh.append("nmpa_context: not configured (optional context input)")
 
     eq = fetch_equities(errors)
     for tk in CFG["equities"]:
@@ -449,6 +466,7 @@ def run():
         state["cites_version"], state["cites_checked_new"] = new_cites_version, TODAY.isoformat()
     if nmpa:
         state["nmpa_latest"] = nmpa[-1]["period"]
+        state["nmpa_last_updated"] = nmpa_updated
     STATE_JSON.write_text(json.dumps(state, indent=2, default=list))
 
     all_rows = rows_before + [row]
@@ -487,6 +505,7 @@ def run():
         L.append("- unavailable this run")
     L += ["", "## Context: NMPA clinical trials"]
     L += [f"- {nmpa[-1]}"] if nmpa else ["- none provided"]
+    L += ["", "## Input freshness"] + [f"- {x}" for x in fresh]
     L += ["", "## Stale inputs"] + ([f"- {s}" for s in stale] or ["- none"])
     L += ["", "## Flags"] + ([f"- {s}" for s in flags] or ["- none"])
     L += ["", "## Notes"] + ([f"- {s}" for s in notes] or ["- none"])

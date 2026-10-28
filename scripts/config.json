@@ -30,5 +30,10 @@
     "603127.SS": "Zhaoyan New Drug (A-share)",
     "6127.HK": "JOINN Laboratories (HK)"
   },
-  "cites_download_url": "https://trade.cites.org/cites_trade/download_db"
+  "cites_download_url": "https://trade.cites.org/cites_trade/download_db",
+  "freshness": {
+    "_comment": "An input is STALE only when overdue for its own cadence or its fetch failed. Unconfigured optional inputs are listed, not stale.",
+    "nifdc_max_age_days": 75,
+    "nmpa_max_age_days": 120
+  }
 }

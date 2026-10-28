@@ -29,3 +29,10 @@ Exit status line: `OK`, `STALE (inputs)`, or `FAILED (reason)`. Paths are repo-r
 ## Series
 - **Headline index:** NIFDC awards only (buyer blank or containing NIFDC / 检定).
 - **all_buyers_cynomolgus** (`secondary_series.csv`): median over every public buyer (CAS institutes, universities, hospitals). Updates more often; mixes buyers and specs, so it is never blended into the headline.
+
+## Status line
+`OK` / `STALE (...)` / `FAILED (...)`. An input is STALE only if it is overdue for its own cadence
+(`config.json` -> `freshness`: NIFDC 75 days since the last new award, NMPA 120 days) or its fetch failed
+(CITES refresh, a share-price ticker). "No new data this week" within cadence, and optional inputs you have not
+configured (NMPA, CRO/analyst), are listed under "Input freshness" in the report with their last-updated date,
+not counted as stale. `stale_inputs` in the CSV carries only the overdue/failed ones.
