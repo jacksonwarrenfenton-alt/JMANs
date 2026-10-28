@@ -1,0 +1,6 @@
+date,buyer,quantity,unit_price_cny,basis,source_url,note
+2026-03-05,CAS Shanghai Institute of Materia Medica,450,131000,award,https://finance.ifeng.com/c/8ul4p6F9ljg,"press: total 58.95M CNY / 450; unit price derived by press; no notice URL/number; article fetched"
+2026-06-16,NIFDC,40,178000,award,https://news.10jqka.com.cn/20260716/c678207808.shtml,"press only; no supplier/notice number; page not fetched (search snippet)"
+2026-06-29,NIFDC,40,190000,budget,https://news.10jqka.com.cn/20260716/c678207808.shtml,"tender announcement budget 7.6M CNY / 40; NOT an award"
+2025-05-01,NIFDC,,92000,award,https://news.ifeng.com/c/8QFrPN7pk1c,"press only; quantity unknown; page not fetched (search snippet)"
+2026-08-05,NIFDC,40,188000,award,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202608/t20260805_27072787.htm,"now in verified ledger; award_date = publication date (notice states no award date)"

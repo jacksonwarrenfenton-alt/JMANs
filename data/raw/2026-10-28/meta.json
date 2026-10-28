@@ -1,0 +1,14 @@
+{
+  "nifdc_tenders.csv": {
+    "source": "local ledger data/inputs/nifdc_tenders.csv",
+    "fetched_at": "2026-10-28T15:16:00+00:00"
+  },
+  "fx.json": {
+    "source": "https://api.frankfurter.app/latest?from=USD&to=CNY",
+    "fetched_at": "2026-10-28T15:16:01+00:00"
+  },
+  "press_candidates.csv": {
+    "source": "local data/inputs/press_candidates.csv",
+    "fetched_at": "2026-10-28T15:16:01+00:00"
+  }
+}

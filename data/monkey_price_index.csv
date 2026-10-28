@@ -1,0 +1,2 @@
+date,index_value,price_cny_median,price_usd,species_used,sources_used,stale_inputs,flags,notes
+2026-10-28,100.00,188000,28201,cynomolgus,nifdc_ledger;frankfurter_ecb_fx,cites(last_updated=never; no export file in data/inputs/cites);cro_crosscheck(none provided);nmpa_context(none provided),,"NIFDC discovery disabled in config; freshness of ledger vs CCGP unverified | BASE SET: 2026-10-28 median 188,000 CNY = 100.0 | fx_usd_cny=6.6664 (2026-10-28); n_lots_window=1"
