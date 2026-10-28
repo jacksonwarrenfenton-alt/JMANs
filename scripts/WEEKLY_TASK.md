@@ -45,18 +45,36 @@ or other circumvention.
 
 ## 5. Refresh the dashboard (after the script succeeds and you have pushed)
 Dashboard: https://claude.ai/artifact/2DU59sJNJciP2apLaRYSh5 (artifact type Dashboard; datasets are attached CSV files).
-For each pair below, (a) upload the repo file with the Artifact tool (`url` = the dashboard, `asset: true`, `file_path` = the file;
-one CSV per call), (b) `ArtifactData` `get` collection `datasets` doc `<id>` to read its `version`, then (c) `update` that doc
-with `source.url` = the new `/_blob/...` url exactly as returned (keep `kind`, `name`, `format`) and `updated` =
-`{at: <now ISO>, by: "Claude"}`, passing `if_version`. Delete the replaced asset afterwards (Artifact `delete`, `path` = old id) only if the update succeeded.
+For each pair below: (a) upload the repo file with the Artifact tool (`url` = the dashboard, `asset: true`, `file_path` = the file;
+one CSV per call); (b) `ArtifactData` `get` collection `datasets` doc `<id>` to read its `version` and old `source.url`;
+(c) `update` that doc with `source.url` = the new `/_blob/...` url exactly as returned (keep `kind`, `name`, `format`) and
+`updated` = `{at: <now ISO>, by: "Claude"}`, passing `if_version`; (d) delete the replaced asset (Artifact `delete`, `path` = the
+old blob id, the part after `/_blob/`) only if the update succeeded. Skip a pair whose repo file did not change.
 
 | dataset id | repo file |
 |---|---|
-| index | data/monkey_price_index.csv |
-| secondary | data/secondary_series.csv |
-| ledger | data/inputs/nifdc_tenders.csv |
+| idxfx | data/index_fx_adjusted.csv |
+| lots | data/lot_prices.csv |
+| fx | data/fx_usd_cny.csv |
+| health | data/source_health.csv |
 | press | data/inputs/press_candidates.csv |
 
-Current asset ids (replace as you refresh): index b9128ef5a820a585e6c2cb07d0a5e397, secondary 7415fb44495f9eb40df5f3a177fb856d,
-ledger dbb29d26541e110ef81b678a62b9484f, press c123abb521243aa4357fe9a6cdf1ef09.
 If the Artifact or ArtifactData tools are unavailable in the run, say so in the status and continue; the repo data is the source of truth.
+
+## Ledger columns
+`notice_id,lot_id,award_date,species,origin,quantity,unit_price_cny,source_url,buyer,price_basis`.
+`price_basis` is `stated` when the notice prints a per-animal price. It is `derived_from_total` only when the notice has a single
+line item, states quantity and total, and total / quantity is an exact whole number; say so in the commit message.
+After editing the ledger, `python scripts/monkey_index.py --context-only` regenerates `data/lot_prices.csv`.
+
+## Source health (every run)
+Record whether each source answered. For the CCGP search fetch, run
+`python scripts/monkey_index.py --log-health ccgp_search ok "<n> results"` (or `fail "<reason>"`).
+The script logs FX, the ledger, both share-price tickers and the CITES database itself. A source that fails two runs in a row
+must be called out in the final status line.
+
+## Daily mode (Tuesday to Sunday; Monday runs the full weekly flow)
+1. Section 0 only, keyword `食蟹猴`, `timeType=5`: look for award notices not yet in the ledger. Open and add them per section 2.
+2. `python scripts/monkey_index.py --context-only` (refreshes FX, lot prices, share prices, source health; writes no index row).
+3. Commit data/ and push. Refresh dashboard pairs (section 5): always `health` and `fx`; the others only if their file changed.
+4. Final status: ccgp_search ok/fail, new ledger rows, any failing source.
