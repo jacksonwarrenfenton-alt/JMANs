@@ -288,6 +288,11 @@ def run():
             sources.append("cites_trade_db")
         cites_info = (latest_year, TODAY.year - latest_year)
         notes.append(f"CITES lag: latest data year {latest_year}, {TODAY.year - latest_year}y behind run year")
+    press = None
+    p = D / "inputs" / "press_candidates.csv"
+    if p.exists():
+        save_raw("press_candidates.csv", p.read_bytes(), f"local {p.relative_to(ROOT)}")
+        press = read_csv(p)[-8:]
     cro = None
     p = D / "inputs" / "cro_crosscheck.csv"
     if p.exists():
@@ -353,6 +358,8 @@ def run():
         L.append("- STALE: no CITES export file provided")
     L += ["", "## Cross-checks (validation only, not in index)"]
     L += [f"- {r}" for r in cro] if cro else ["- none provided"]
+    L += ["", "## Unverified press / aggregator figures (never in index)"]
+    L += [f"- {r}" for r in press] if press else ["- none"]
     L += ["", "## Context: NMPA clinical trials"]
     L += [f"- {nmpa[-1]}"] if nmpa else ["- none provided"]
     L += ["", "## Stale inputs"] + ([f"- {s}" for s in stale] or ["- none"])
