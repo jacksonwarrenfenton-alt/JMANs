@@ -23,6 +23,10 @@ TODAY = dt.date.fromisoformat(os.environ["MPI_TODAY"]) if os.environ.get("MPI_TO
 D = ROOT / "data"
 INDEX_CSV = D / "monkey_price_index.csv"
 SECONDARY_CSV = D / "secondary_series.csv"
+FX_CSV = D / "fx_usd_cny.csv"
+LOTS_CSV = D / "lot_prices.csv"
+IDXFX_CSV = D / "index_fx_adjusted.csv"
+HEALTH_CSV = D / "source_health.csv"
 STATE_JSON = D / "state.json"
 RAW = D / "raw" / TODAY.isoformat()
 INDEX_COLS = ["date", "index_value", "price_cny_median", "price_usd", "species_used",
@@ -168,6 +172,139 @@ def eq_change(pts, weeks):
     tgt = pts[-1][0] - dt.timedelta(weeks=weeks)
     base = [c for d, c in pts if d <= tgt]
     return pct(pts[-1][1], base[-1]) if base else None
+
+
+def log_health(source, ok, detail=""):
+    append_row(HEALTH_CSV, ["checked_at", "source", "status", "detail"],
+               {"checked_at": now_iso(), "source": source, "status": "ok" if ok else "fail", "detail": str(detail)[:200]})
+
+
+def update_fx_history():
+    """Append daily USD/CNY (Frankfurter, ECB reference) after the last stored date. Returns days added."""
+    rows = read_csv(FX_CSV) if FX_CSV.exists() else []
+    last = rows[-1]["date"] if rows else "2019-12-31"
+    if last >= TODAY.isoformat():
+        return 0
+    url = f"https://api.frankfurter.app/{last}..{TODAY.isoformat()}?from=USD&to=CNY"
+    r = requests.get(url, headers=UA, timeout=60)
+    if r.status_code != 200:
+        raise SourceError(f"FX history HTTP {r.status_code}")
+    save_raw("fx_history.json", r.content, url)
+    new = [(d, v["CNY"]) for d, v in sorted(r.json()["rates"].items()) if d > last]
+    lo, hi = CFG["fx_sane_range"]
+    for d, v in new:
+        if not (lo < v < hi):
+            raise SourceError(f"FX {d} {v} outside sane range")
+    for d, v in new:
+        append_row(FX_CSV, ["date", "usd_cny"], {"date": d, "usd_cny": v})
+    return len(new)
+
+
+def fx_table():
+    return [(r["date"], float(r["usd_cny"])) for r in read_csv(FX_CSV)]
+
+
+def rate_on(table, d):
+    """Latest published rate on or before date d (non-business days use the prior business day)."""
+    day = d.isoformat()
+    best = None
+    for dd, v in table:
+        if dd <= day:
+            best = (dd, v)
+        else:
+            break
+    if best is None:
+        raise SourceError(f"no FX rate on or before {day}")
+    return best
+
+
+def write_lot_prices(lots, table):
+    """Derived, deterministic: every ledger lot with USD price at its own award-date rate."""
+    cols = ["notice_id", "lot_id", "award_date", "buyer", "nifdc", "species", "quantity", "unit_price_cny",
+            "fx_usd_cny", "fx_date", "unit_price_usd"]
+    with open(LOTS_CSV, "w", newline="", encoding="utf-8") as f:
+        w = csv.DictWriter(f, fieldnames=cols)
+        w.writeheader()
+        for l in sorted(lots, key=lambda x: (x["award_date"], x["key"])):
+            fd, fv = rate_on(table, l["award_date"])
+            w.writerow({"notice_id": l["key"][0], "lot_id": l["key"][1], "award_date": l["award_date"].isoformat(),
+                        "buyer": l["buyer"], "nifdc": int(l["nifdc"]), "species": l["species"], "quantity": l["quantity"],
+                        "unit_price_cny": f"{l['price']:.0f}", "fx_usd_cny": fv, "fx_date": fd,
+                        "unit_price_usd": f"{l['price'] / fv:.0f}"})
+
+
+def window_asof(lots, asof, species):
+    lo = asof - dt.timedelta(days=CFG["window_days"])
+    return [l for l in lots if l["nifdc"] and l["species"] == species and lo <= l["award_date"] <= asof]
+
+
+def median_usd(ls, table):
+    return statistics.median(l["price"] / rate_on(table, l["award_date"])[1] for l in ls) if ls else None
+
+
+def ensure_idxfx(lots, table, state):
+    """Backfill index_fx_adjusted rows for index rows that lack one (append-only, deterministic)."""
+    have = {r["date"] for r in read_csv(IDXFX_CSV)} if IDXFX_CSV.exists() else set()
+    base = state.get("base")
+    if not INDEX_CSV.exists() or not base:
+        return
+    bdate = dt.date.fromisoformat(base["date"])
+    if "median_usd" not in base:
+        base["median_usd"] = median_usd(window_asof(lots, bdate, CFG["primary_species"]), table)
+        state["base"] = base
+    for r in read_csv(INDEX_CSV):
+        if r["date"] in have or not r["index_value"]:
+            continue
+        d = dt.date.fromisoformat(r["date"])
+        mu = median_usd(window_asof(lots, d, CFG["primary_species"]), table)
+        if mu is None or not base["median_usd"]:
+            continue
+        append_row(IDXFX_CSV, ["date", "median_cny", "median_usd_award_fx", "usd_cny_run", "index_cny", "index_usd"],
+                   {"date": r["date"], "median_cny": r["price_cny_median"], "median_usd_award_fx": f"{mu:.0f}",
+                    "usd_cny_run": rate_on(table, d)[1], "index_cny": r["index_value"],
+                    "index_usd": f"{mu / base['median_usd'] * CFG['base_value']:.2f}"})
+
+
+def append_equities(eq):
+    have = {(r["date"], r["ticker"]) for r in read_csv(D / "context_equities.csv")} if (D / "context_equities.csv").exists() else set()
+    for tk, e in eq.items():
+        if (TODAY.isoformat(), tk) in have:
+            continue
+        append_row(D / "context_equities.csv", ["date", "ticker", "last_close_date", "close", "currency"],
+                   {"date": TODAY.isoformat(), "ticker": tk, "last_close_date": e["pts"][-1][0].isoformat(),
+                    "close": f"{e['pts'][-1][1]:.2f}", "currency": e["ccy"]})
+
+
+def run_context():
+    """Daily check: refresh FX, lot USD prices, share prices and source health. Never writes an index row."""
+    errors, state = [], load_state()
+    D.mkdir(parents=True, exist_ok=True)
+    try:
+        n = update_fx_history()
+        log_health("fx_frankfurter", True, f"+{n} days")
+    except Exception as e:
+        errors.append(f"fx: {e}")
+        log_health("fx_frankfurter", False, e)
+    try:
+        lots = load_ledger([])
+        write_lot_prices(lots, fx_table())
+        ensure_idxfx(lots, fx_table(), state)
+        STATE_JSON.write_text(json.dumps(state, indent=2, default=list))
+        log_health("ledger", True, f"{len(lots)} lots")
+    except Exception as e:
+        errors.append(f"ledger/lots: {e}")
+        log_health("ledger", False, e)
+    eq = fetch_equities(errors)
+    for tk in CFG["equities"]:
+        log_health(f"yahoo_{tk}", tk in eq, "" if tk in eq else next((x for x in errors if tk in x), "failed"))
+    append_equities(eq)
+    try:
+        v = cites_remote_version()
+        log_health("cites_db", True, v)
+    except Exception as e:
+        errors.append(f"cites: {e}")
+        log_health("cites_db", False, e)
+    return ("STALE (" + "; ".join(errors) + ")") if errors else "OK"
 
 
 def cites_remote_version():
@@ -339,6 +476,10 @@ def run():
             notes.append(f"unledgered: {t} {u}")
     sources.append("nifdc_ledger")
     fx, fx_date = fetch_fx(flags, notes)
+    n_fx = update_fx_history()
+    table = fx_table()
+    write_lot_prices(lots, table)
+    log_health("fx_frankfurter", True, f"+{n_fx} days; latest {fx_date}")
     sources.append("frankfurter_ecb_fx")
 
     # freshness of primary input
@@ -361,12 +502,23 @@ def run():
                           "not carrying forward (METHOD)")
     median_cny = med(prim)
 
+    prev_w = state.get("window_days")
+    if prev_w and prev_w != CFG["window_days"]:
+        notes.append(f"METHOD CHANGE: window {prev_w}d -> {CFG['window_days']}d (awards are sparse; base unchanged; "
+                     "earlier rows were computed on the old window and are not restated)")
+    state["window_days"] = CFG["window_days"]
+
     # base
     base = state.get("base")
     if base is None:
         base = {"date": TODAY.isoformat(), "median_cny": median_cny}
         notes.append(f"BASE SET: {base['date']} median {median_cny:,.0f} CNY = {CFG['base_value']}")
+    usd_award = median_usd(prim, table)
+    if "median_usd" not in base:
+        base["median_usd"] = usd_award if base["date"] == TODAY.isoformat() else median_usd(
+            window_asof(lots, dt.date.fromisoformat(base["date"]), CFG["primary_species"]), table)
     idx = median_cny / base["median_cny"] * CFG["base_value"]
+    idx_usd = usd_award / base["median_usd"] * CFG["base_value"] if base.get("median_usd") else None
     usd = median_cny / fx
 
     # outliers (flag only)
@@ -452,12 +604,12 @@ def run():
         append_row(SECONDARY_CSV, ["date", "series", "n_lots", "median_cny"],
                    {"date": TODAY.isoformat(), "series": name, "n_lots": len(ls),
                     "median_cny": f"{med(ls):.0f}" if ls else ""})
-    for tk, e in eq.items():
-        append_row(D / "context_equities.csv", ["date", "ticker", "last_close_date", "close", "currency"],
-                   {"date": TODAY.isoformat(), "ticker": tk, "last_close_date": e["pts"][-1][0].isoformat(),
-                    "close": f"{e['pts'][-1][1]:.2f}", "currency": e["ccy"]})
+    append_equities(eq)
+    for tk in CFG["equities"]:
+        log_health(f"yahoo_{tk}", tk in eq, "" if tk in eq else "fetch failed")
     state.update({"base": base, "seen_lots": sorted(l["key"] for l in lots),
                   "last_run": TODAY.isoformat()})
+    ensure_idxfx(lots, table, state)
     if new_lots:
         state["nifdc_last_updated"] = TODAY.isoformat()
     if cites_info and state.get("cites_latest_year") != cites_info[0]:
@@ -505,6 +657,18 @@ def run():
         L.append("- unavailable this run")
     L += ["", "## Context: NMPA clinical trials"]
     L += [f"- {nmpa[-1]}"] if nmpa else ["- none provided"]
+    bfx = rate_on(table, dt.date.fromisoformat(base["date"]))[1]
+    L += ["", "## Currency view (separates price from FX)",
+          f"- Median at each award-date USD/CNY: {fmt(usd_award, 0)} USD vs {fmt(median_cny, 0)} CNY",
+          f"- Index in CNY: {idx:.2f}  |  Index in USD (award-date FX): {fmt(idx_usd, 2)}",
+          f"- USD/CNY now {fx} vs {bfx} at base ({base['date']}): yuan {fmt(pct(bfx, fx), 1, '%')} vs dollar "
+          "(positive = yuan stronger)"]
+    health = read_csv(HEALTH_CSV) if HEALTH_CSV.exists() else []
+    latest_h = {}
+    for h in health:
+        latest_h[h["source"]] = h
+    L += ["", "## Source health (latest check per source)"] + [
+        f"- {k}: {v['status']} ({v['checked_at'][:16]}Z) {v['detail']}" for k, v in sorted(latest_h.items())]
     L += ["", "## Input freshness"] + [f"- {x}" for x in fresh]
     L += ["", "## Stale inputs"] + ([f"- {s}" for s in stale] or ["- none"])
     L += ["", "## Flags"] + ([f"- {s}" for s in flags] or ["- none"])
@@ -519,8 +683,12 @@ def run():
 
 
 def main():
+    if len(sys.argv) >= 4 and sys.argv[1] == "--log-health":
+        log_health(sys.argv[2], sys.argv[3] == "ok", " ".join(sys.argv[4:]))
+        print("logged")
+        return 0
     try:
-        status = run()
+        status = run_context() if "--context-only" in sys.argv else run()
     except SourceError as e:
         write_report([f"# Monkey Price Index {TODAY}", "", "**No index written (append-only; no partial index).**",
                       "", "## Errors", f"- {e}"])

@@ -1,7 +1,7 @@
 {
   "nifdc_tenders.csv": {
     "source": "local ledger data/inputs/nifdc_tenders.csv",
-    "fetched_at": "2026-10-28T15:16:00+00:00"
+    "fetched_at": "2026-10-28T16:04:18+00:00"
   },
   "fx.json": {
     "source": "https://api.frankfurter.app/latest?from=USD&to=CNY",
@@ -10,5 +10,17 @@
   "press_candidates.csv": {
     "source": "local data/inputs/press_candidates.csv",
     "fetched_at": "2026-10-28T15:16:01+00:00"
+  },
+  "fx_history.json": {
+    "source": "https://api.frankfurter.app/2019-12-31..2026-10-28?from=USD&to=CNY",
+    "fetched_at": "2026-10-28T16:04:18+00:00"
+  },
+  "equity_603127.SS.json": {
+    "source": "https://query1.finance.yahoo.com/v8/finance/chart/603127.SS?range=6mo&interval=1d",
+    "fetched_at": "2026-10-28T16:04:18+00:00"
+  },
+  "equity_6127.HK.json": {
+    "source": "https://query1.finance.yahoo.com/v8/finance/chart/6127.HK?range=6mo&interval=1d",
+    "fetched_at": "2026-10-28T16:04:42+00:00"
   }
 }

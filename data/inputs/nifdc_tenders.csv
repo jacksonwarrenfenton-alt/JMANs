@@ -1,3 +1,8 @@
-notice_id,lot_id,award_date,species,origin,quantity,unit_price_cny,source_url,buyer
-0747-2661SCCZAB109,1,2026-06-16,cynomolgus,unknown,40,178000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202606/t20260616_26755006.htm,中国食品药品检定研究院
-0686-2611CI035338Z,1,2026-08-05,cynomolgus,unknown,40,188000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202608/t20260805_27072787.htm,中国食品药品检定研究院
+notice_id,lot_id,award_date,species,origin,quantity,unit_price_cny,source_url,buyer,price_basis
+PHZB2023-205,1,2024-01-02,cynomolgus,china,10,138000,http://www.ccgp.gov.cn/cggg/dfgg/cjgg/202401/t20240102_21375798.htm,山东大学齐鲁医院,stated
+ZJ-2460298-10G,1,2024-11-12,cynomolgus,unknown,15,90000,http://www.ccgp.gov.cn/cggg/zygg/cjgg/202411/t20241112_23595991.htm,浙江大学,stated
+CFTC-BJ01-2503016,1,2025-05-06,cynomolgus,unknown,50,92000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202505/t20250506_24541753.htm,中国食品药品检定研究院,stated
+STC25A562,1,2025-10-31,cynomolgus,unknown,82,88000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202510/t20251031_25612917.htm,中国科学院上海药物研究所,stated
+OITC-G260300374,1,2026-03-05,cynomolgus,unknown,450,131000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202603/t20260305_26229632.htm,中国科学院上海药物研究所,derived_from_total
+0747-2661SCCZAB109,1,2026-06-16,cynomolgus,unknown,40,178000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202606/t20260616_26755006.htm,中国食品药品检定研究院,stated
+0686-2611CI035338Z,1,2026-08-05,cynomolgus,unknown,40,188000,http://www.ccgp.gov.cn/cggg/zygg/zbgg/202608/t20260805_27072787.htm,中国食品药品检定研究院,stated

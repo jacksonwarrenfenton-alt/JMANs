@@ -6,7 +6,7 @@ Exit status line: `OK`, `STALE (inputs)`, or `FAILED (reason)`. Paths are repo-r
 
 ## Method (placeholders resolved; edit `config.json` to change)
 - **Primary series:** median per-animal winning-bid price (CNY) of *cynomolgus* lots in NIFDC award notices,
-  trailing 90 days by award date. Simple median across lots (not quantity-weighted).
+  trailing 180 days by award date (changed from 90 on the second run: NIFDC awards come a few times a year, so 90 days regularly left the window empty). Simple median across lots (not quantity-weighted).
 - **Base:** set automatically on the first successful run (that run's date and median = 100), stored in `data/state.json`.
 - **Index** = median / base median x 100.
 - **USD:** CNY median / USD-CNY from Frankfurter (ECB reference rate). ECB publishes once per business day, so
